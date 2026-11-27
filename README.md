@@ -1,45 +1,70 @@
-# Video Hide GUI 0.3.1
+# ExactSplice
 
-Локальный редактор для Android/Termux и Linux. Не требует сетевых сервисов.
+[English](README.md) · [Русский](README.ru.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Українська](README.uk.md)
 
-## Установка Android
+**Frame-accurate video editing with minimal re-encoding.**
+
+ExactSplice is an open-source, local FFmpeg-based video editor, originally developed as Video Hide for redacting confidential portions of recordings. The browser interface runs on the same device as the Python server; no cloud service is required.
+
+## Status
+
+The reference release is [Video Hide v0.3.1](https://github.com/l3chat/ExactSplice/releases/tag/v0.3.1). The broader editor (0.4) is under development. Portable Windows, Linux and macOS bundles are planned, not yet available.
+
+The development editor is available at `/editor` when running the `develop` branch. It implements cut, copy, paste, delete, move, replace, split, hide, external insertion and undo/redo. Export currently uses full re-encoding, requires equal source frame rates and is not yet validated on real media. General-purpose Smart Exact is not implemented. See [development notes](docs/editor-alpha.md).
+
+## Installation
+
+On Android, install Termux and run the following commands. On Linux, install Python 3 and FFmpeg (including ffprobe, libx264 and drawtext), then clone the repository and launch the server.
+
+### Android / Termux
 
 ```sh
-pkg install python ffmpeg unzip
+pkg install python ffmpeg git
 termux-setup-storage
-mkdir -p ~/vh03
-cd ~/vh03
-unzip ~/storage/downloads/video-hide-gui-0.3.1.zip
-python video-hide-gui/gui.py
+git clone -b develop https://github.com/l3chat/ExactSplice.git
+cd ExactSplice
+python gui.py
 ```
-Откройте http://127.0.0.1:8765 в браузере. Для Linux передайте путь к папке видео: `python gui.py /path/to/videos`.
 
-## Работа
-1. Выберите файл в списке. Для просмотра браузер должен поддерживать его кодек.
-2. Найдите ключевые кадры кнопкой сканирования (нужно для Smart).
-3. Перемотайте к началу, нажмите кнопку текущего кадра под началом. Аналогично отметьте конец. Нажмите «Добавить интервал». Повторите для остальных интервалов. Пересекающиеся и смежные интервалы объединяются. Незавершённый, но корректный черновик также включается в экспорт.
-4. Используйте масштаб и ползунок перемещения шкалы, переходы по ключевым кадрам и шаг на длительность кадра (точность зависит от браузера и CFR).
-5. Настройте цвет фона, цвет и размер таймера. Включите предпросмотр. Надпись «Продолжение через» есть только в интерфейсе, экспорт содержит таймер.
-6. Сохраните проект в JSON через браузер; откройте его позже кнопкой «Открыть проект». Проект хранит пути и настройки, не видео.
-7. Выберите режим, звук, CRF и новое имя MP4. Нажмите «Создать видео». Следите за прогрессом и журналом. Не закрывайте Termux до окончания.
+### Linux
 
-## Режимы
-- Full: H.264, CRF 18 по умолчанию, перекодирует всё видео.
-- Smart: расширяет интервалы наружу до ключевых кадров и копирует остальные GOP.
-- Smart Exact (экспериментальный): перекодирует только GOP, пересекающие заданные интервалы; накладывает маску по номерам кадров, создаёт IDR на начале и конце каждого интервала внутри GOP. Остальные GOP копируются. Для границ между кадрами применяется первый кадр с временной меткой не меньше указанной границы. Таймер отсчитывает до конца фактического скрытия.
+```sh
+git clone -b develop https://github.com/l3chat/ExactSplice.git
+cd ExactSplice
+python3 gui.py /path/to/videos
+```
 
-Оба Smart-режима требуют обычного H.264 yuv420p CFR с квадратными пикселями и нулевым стартом. Интервалы должны иметь внутренние ключевые кадры по обе стороны; иначе используйте Full. Проверяются число пакетов, сетка временных меток и декодированные кадры возле каждой склейки. При ошибке итоговый файл не публикуется. Полная покадровая проверка (по умолчанию выключена) сравнивает декодированные кадры результата с подготовленными фрагментами; Full при включении лишь проверяет декодирование. Ни одна из проверок не является гарантией отсутствия конфиденциального содержания: просмотрите все скрытые интервалы и прослушайте звук перед передачей файла.
+Open http://127.0.0.1:8765 in your browser. The legacy interface is currently in Russian. Use a local media directory as the optional command-line argument.
 
-Прогресс: общий процент приблизителен, второй индикатор относится к текущему этапу. Отображаются этап, скорость FFmpeg, время работы, приблизительный остаток и размер данных текущей операции, когда FFmpeg его сообщает (не всегда это размер финального файла). На стадии анализа ключевых кадров точный процент недоступен; время продолжает обновляться. Журнал раскрывается по нажатию.
+## Workflow
 
-Остановка: нажмите «Остановить». Сервер отправляет SIGTERM группе процессов, временные файлы удаляются при штатной отмене, результат не публикуется. При принудительном завершении Termux могут остаться скрытые каталоги .video-hide-* рядом с выходным файлом. Удаляйте их только после проверки, что обработка завершена. Они могут содержать исходные конфиденциальные кадры.
+1. Select a source video; browser playback depends on codec support.
+2. Scan for keyframes when using Smart modes. Use the zoomable timeline, keyframe navigation and frame-step controls to set the beginning and end of each interval.
+3. Add each interval. Overlapping or adjacent intervals are merged; a valid unfinished selection is also included in export.
+4. Set background colour, timer colour and size, and enable preview. The exported mask contains the countdown, not the preview label.
+5. Save or reopen the JSON project; it contains paths and settings, not video data. Version 0.2 projects can be loaded; select Smart Exact manually if needed.
+6. Choose export mode, audio handling, CRF and a new MP4 filename. Monitor the progress and log; keep the server running until completion.
 
-Проекты 0.2 загружаются без преобразования: старый флаг smart выбирает прежний режим; для точных границ выберите Smart Exact вручную.
+## Export modes
 
-Звук: сохраняется только первая звуковая дорожка; при заглушении перекодируется в AAC с запасом 0.3.15 с по обеим сторонам. Проверяйте результат, особенно звук и границы. Субтитры, главы и исходные метаданные не копируются. Размер файла не гарантируется; оценка Smart основана лишь на доле длительности и размере исходника, не учитывает VBR и новые данные. Исходный файл не изменяется. Не используйте предпросмотр как доказательство отсутствия конфиденциальной информации в экспорте.
+- **Full:** encodes the entire video to H.264; default CRF 18.
+- **Smart:** expands redaction intervals outward to existing keyframes and copies unaffected GOPs without re-encoding.
+- **Smart Exact (experimental):** re-encodes affected GOPs only, masks by frame number and creates IDR frames at internal redaction boundaries. Unaffected GOPs are copied. Boundaries between frames are rounded up to the next presentation frame; the timer counts down to the actual end of masking.
 
-Тесты: Linux, синтетический H.264/AAC с B-кадрами, два интервала, все три режима, Smart Exact с полной и быстрой проверкой, совпадение хешей вне затронутого GOP, наличие новых ключевых кадров, отмена через HTTP. Android, реальные длинные записи, точность заглушения звука и браузерный интерфейс непосредственно не проверены.
+## Compatibility and privacy
 
-## Исправление 0.3.1
+Smart modes require ordinary H.264, yuv420p, constant frame rate (CFR), square pixels and zero video start time, with suitable interior keyframes on both sides of the intervals. Use Full otherwise. Packet counts, presentation timestamps and decoded frames around joins are checked; failures prevent publication. Optional full frame verification compares decoded output against prepared segments; in Full mode it only checks decoding. These checks do not guarantee confidentiality: review every hidden interval and listen to the output before sharing.
 
-При склейке Smart/Smart Exact нормализуются DTS по общей задержке декодирования, вычисленной из порядка пакетов. PTS остаются неизменными; обязательные проверки результата сохранены. Проверено на коротких H.264 CFR видео с 0, 1 и 2 B-кадрами. Реальный файл пользователя и Android не проверены.
+Only the first audio track is retained. Muting re-encodes it to AAC with a 0.25 s margin on both sides; verify the result. Subtitles, chapters and source metadata are not copied. Source files remain unchanged. Output size is not guaranteed; estimates ignore bitrate variation and new data.
+
+## Progress and cancellation
+
+The progress display is approximate and includes the current stage, FFmpeg speed, elapsed time, estimated remaining time and current operation size when available. Keyframe scanning has no exact percentage. Cancel using the Stop button; the server sends SIGTERM to the process group and normally cleans up temporary files without publishing output. Forced termination can leave .video-hide-* directories beside the output; they may contain confidential source frames. Remove them only after processing stops.
+
+## Testing and DTS fix
+
+Version 0.3.1 normalizes decoding timestamps (DTS) across segments while preserving presentation timestamps (PTS). Synthetic Linux tests reported success with zero, one and two B-frames, including Smart Exact verification and cancellation. A user also reported successful processing of a long Zoom recording on Android. Broad device, codec and audio-redaction validation remains incomplete.
+
+## License
+
+See [LICENSE](LICENSE). FFmpeg and other dependencies have their own licenses.
