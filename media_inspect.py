@@ -121,6 +121,7 @@ def inspect(path):
             if p.wait(): raise ValueError("Packet inspection failed")
         finally:
             if p.poll() is None: p.terminate(); p.wait()
+            p.stdout.close()
     return Inspection(Source(frames,fps,v["width"],v["height"],signature,()),candidates)
 
 if __name__=="__main__":
