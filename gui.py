@@ -4,6 +4,9 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import video_hide as core
 import signal,time
+from timeline import Timeline, Clip
+from fractions import Fraction
+from render_timeline import source_info
 ROOT=Path(sys.argv[1] if len(sys.argv)>1 else str(Path.home()/'storage/shared')).resolve()
 HERE=Path(__file__).resolve().parent
 TOKEN=secrets.token_urlsafe(24)
@@ -12,10 +15,10 @@ lock=threading.Lock(); job={'state':'idle','log':''}; proc=None
 def path(s):
  p=(ROOT/s).resolve(); p.relative_to(ROOT); return p
 
-def work(args):
+def work(args, script='multi.py'):
  global proc
  try:
-  proc=subprocess.Popen([sys.executable,'-u',str(HERE/'multi.py'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
+  proc=subprocess.Popen([sys.executable,'-u',str(HERE/script),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
   with lock:
    if job['state']=='cancelling': os.killpg(proc.pid,signal.SIGTERM)
   for line in proc.stdout:
@@ -34,8 +37,8 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   try:
    u=urllib.parse.urlsplit(self.path); q=urllib.parse.parse_qs(u.query); get=lambda k,d='':q.get(k,[d])[0]
-   if u.path=='/':
-    b=(HERE/'index.html').read_text().replace('__TOKEN__',TOKEN).encode(); self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store'); self.end_headers(); self.wfile.write(b); return
+   if u.path in ('/','/editor'):
+    b=(HERE/('editor.html' if u.path=='/editor' else 'index.html')).read_text().replace('__TOKEN__',TOKEN).encode(); self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store'); self.end_headers(); self.wfile.write(b); return
    if get('token')!=TOKEN: self.reply({'error':'Forbidden'},403); return
    if u.path=='/list':
     p=path(get('dir')); items=[]
@@ -46,6 +49,8 @@ class Handler(BaseHTTPRequestHandler):
     self.reply({'items':items,'parent':str(p.parent.relative_to(ROOT)) if p!=ROOT else None}); return
    if u.path=='/info':
     p=path(get('file')); d=core.probe(p,'-show_streams','-show_format'); v=next(x for x in d['streams'] if x['codec_type']=='video'); self.reply({'duration':float(d['format']['duration']),'fps':v['avg_frame_rate'],'size':p.stat().st_size,'codec':v['codec_name']}); return
+   if u.path=='/source':
+    self.reply(source_info(path(get('file')))); return
    if u.path=='/keys':
     p=path(get('file')); self.reply({'keys':core.keys(p)}); return
    if u.path=='/status':
@@ -76,14 +81,55 @@ class Handler(BaseHTTPRequestHandler):
   except Exception as e: self.reply({'error':str(e)},400)
  def do_POST(self):
   try:
-   if self.path not in ('/start','/cancel') or self.headers.get('X-Token')!=TOKEN: self.reply({'error':'Forbidden'},403); return
+   if self.path not in ('/start','/cancel','/edit','/render') or self.headers.get('X-Token')!=TOKEN: self.reply({'error':'Forbidden'},403); return
    if self.path=='/cancel':
     with lock:
      if job['state']=='running':
       job['state']='cancelling'
       if proc is not None and proc.poll() is None: os.killpg(proc.pid,signal.SIGTERM)
     self.reply({'ok':True}); return
-   d=json.loads(self.rfile.read(min(int(self.headers['Content-Length']),65536))); src=path(d['file']); dst=path(d['output']); a=0; b=1; crf=int(d.get('crf',18))
+   length=int(self.headers['Content-Length'])
+   if not 0<=length<=2_000_000: raise ValueError('Request too large')
+   d=json.loads(self.rfile.read(length))
+   if self.path=='/edit':
+    op=d['op']
+    if op=='new':
+     s=source_info(path(d['file'])); t=Timeline(s['fps'],[Clip(d['file'],0,s['frames'])])
+    elif op=='legacy':
+     p=d['project']; s=source_info(path(p['file'])); t=Timeline.from_legacy(p,s['fps'],s['frames'])
+    else:
+     t=Timeline.from_dict(d['project'])
+     a=d.get('a'); b=d.get('b'); pos=d.get('position')
+     clipboard=None
+     if op=='copy': clipboard=t.copy(a,b)
+     elif op=='cut': clipboard=t.cut(a,b)
+     elif op=='delete': t.delete(a,b)
+     elif op=='hide': t.hide(a,b,d.get('mute',True))
+     elif op=='move': t.move(a,b,pos)
+     elif op=='split': t.split(pos)
+     elif op in ('paste','replace'):
+      clips=[Clip(**c) for c in d['clipboard']]
+      if op=='paste': t.paste(pos,clips)
+      else: t.replace(a,b,clips)
+     elif op=='insert':
+      s=source_info(path(d['file']))
+      if Fraction(s['fps'])!=t.fps: raise ValueError('Different frame rate: normalize source first')
+      if not 0<=a<b<=s['frames']: raise ValueError('Invalid source selection')
+      t.insert(pos,[Clip(d['file'],a,b)])
+     else: raise ValueError('Unknown edit')
+     self.reply({'project':t.to_dict(),'clipboard':[vars(c) for c in clipboard] if clipboard is not None else None}); return
+    self.reply({'project':t.to_dict()}); return
+   if self.path=='/render':
+    t=Timeline.from_dict(d['project']); dst=path(d['output'])
+    if not t.clips or dst.exists() or not dst.parent.is_dir() or dst.suffix.lower()!='.mp4': raise ValueError('Choose new MP4 output and nonempty timeline')
+    project=t.to_dict()
+    for clip in project['timeline']: clip['source']=str(path(clip['source']))
+    args=[json.dumps({'project':project,'output':str(dst),'crf':int(d.get('crf',18))})]
+    with lock:
+     if job['state'] in ('running','cancelling'): self.reply({'error':'Already running'},409); return
+     job.clear(); job.update(state='running',log='Starting timeline export…\n',progress=0,started=time.monotonic())
+    threading.Thread(target=work,args=(args,'render_timeline.py'),daemon=True).start(); self.reply({'ok':True}); return
+   src=path(d['file']); dst=path(d['output']); a=0; b=1; crf=int(d.get('crf',18))
    if not src.is_file() or dst.exists() or not dst.parent.is_dir() or dst.suffix.lower()!='.mp4' or not 0<=a<b or not 0<=crf<=51: raise ValueError('Invalid input/output/interval')
    d.update(file=str(src),output=str(dst)); args=[json.dumps(d)]
    with lock:
