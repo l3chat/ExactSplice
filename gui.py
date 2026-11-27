@@ -124,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
     if not t.clips or dst.exists() or not dst.parent.is_dir() or dst.suffix.lower()!='.mp4': raise ValueError('Choose new MP4 output and nonempty timeline')
     project=t.to_dict()
     for clip in project['timeline']: clip['source']=str(path(clip['source']))
-    args=[json.dumps({'project':project,'output':str(dst),'crf':int(d.get('crf',18))})]
+    args=[json.dumps({'project':project,'output':str(dst),'crf':int(d.get('crf',18)),'mode':d.get('mode','full')})]
     with lock:
      if job['state'] in ('running','cancelling'): self.reply({'error':'Already running'},409); return
      job.clear(); job.update(state='running',log='Starting timeline export…\n',progress=0,started=time.monotonic())
