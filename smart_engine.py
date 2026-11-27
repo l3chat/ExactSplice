@@ -5,6 +5,7 @@ accepted only after independent decoding matches the original frames.
 Every final decoded frame and presentation timestamp is checked.
 """
 import subprocess
+import shutil
 import json
 from dataclasses import replace
 from fractions import Fraction
@@ -94,6 +95,7 @@ def render_video(t,sources,folder,crf,emit=lambda **kw:None):
                 src=segments[1 if part.start else 0]
             else: src=part.source
             ff(["-i",src,"-map","0:v:0","-an","-c:v","copy","-video_track_timescale",timescale,"-map_metadata","-1","-map_chapters","-1",out])
+            if cuts: shutil.rmtree(sub)
             hashes=original[part.source][part.start:part.end]
             if frame_hashes(out)!=hashes:
                 raise ValueError("Independent COPY verification failed; use Full explicitly")

@@ -102,6 +102,9 @@ def render(data):
         if mode=='smart':
             from smart_engine import verify
             verify(result,fps,expected)
+        from audio_verify import verify_audio
+        timing=verify_audio(result,total,fps)
+        emit(stage='Audio timing verified',progress=99,audio=timing)
         # No overwrite, even if destination appeared during export.
         # Android shared storage may not support hardlinks. Reserve the name exclusively.
         import shutil

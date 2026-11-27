@@ -13,6 +13,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: python -m compileall -q gui.py timeline.py render_timeline.py multi.py video_hide.py media_inspect.py smart_engine.py export_plan.py
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: python -m compileall -q gui.py timeline.py render_timeline.py multi.py video_hide.py media_inspect.py smart_engine.py export_plan.py audio_verify.py
       - run: python -W error::ResourceWarning -m unittest discover -s tests -v
